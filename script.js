@@ -1,121 +1,57 @@
-// ============================================================
-// STATE
-// ============================================================
-// Dán vào đầu file script.js của bạn
-const supabase = supabase.createClient('https://ihrtbsiusurvopbhtqde.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlocnRic2l1c3Vydm9wYmh0cWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzY5OTcsImV4cCI6MjA5NTgxMjk5N30.JNgO4mqMnqlkTO_vtE46oqK2agkGGNCYUWzL_hu8oIg');
-const DEFAULT_SETTINGS = {
-  shopName:'KaraokeOS Lounge',
-  address:'123 Nguyễn Huệ, Q.1, TP.HCM',
-  hotline:'0909 123 456',
-  taxId:'0123456789',
-  vipRate:500000,
-  stdRate:350000,
-  bankId:'VCB',
-  accountNo:'1234567890',
-  accountName:'KARAOKE OS',
-  printSize:'a4',
-  includeHeader:true,
-  footerNote:'Cảm ơn quý khách, hẹn gặp lại! 🎤',
-  theme:'dark'
-};
+// 1. KHỞI TẠO AN TOÀN (Không dùng const supabase để tránh trùng lặp)
+if (!window.supabaseClient) {
+    window.supabaseClient = supabase.createClient(
+        'https://ihrtbsiusurvopbhtqde.supabase.co', 
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlocnRic2l1c3Vydm9wYmh0cWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzY5OTcsImV4cCI6MjA5NTgxMjk5N30.JNgO4mqMnqlkTO_vtE46oqK2agkGGNCYUWzL_hu8oIg'
+    );
+}
 
-const DEFAULT_ROOMS = [
-  {RoomID:'101',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'102',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
-  {RoomID:'103',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'104',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
-  {RoomID:'201',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
-  {RoomID:'202',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'203',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
-  {RoomID:'204',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'301',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'302',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
-  {RoomID:'303',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
-  {RoomID:'304',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null}
-];
+// 2. DỮ LIỆU CỦA BẠN (Giữ nguyên)
+const DEFAULT_SETTINGS = { /* ... dữ liệu của bạn ... */ };
+const DEFAULT_ROOMS = [ /* ... dữ liệu của bạn ... */ ];
+const DEFAULT_EMPLOYEES = [ /* ... dữ liệu của bạn ... */ ];
+const DEFAULT_CUSTOMERS = [ /* ... dữ liệu của bạn ... */ ];
 
-const DEFAULT_EMPLOYEES = [
-  {EmployeeID:'E001',Name:'Nguyễn Văn An',Role:'Thu ngân',Shift:'Ca sáng',Status:'Đang làm'},
-  {EmployeeID:'E002',Name:'Trần Thị Bình',Role:'Phục vụ',Shift:'Ca tối',Status:'Đang làm'},
-  {EmployeeID:'E003',Name:'Lê Minh Cường',Role:'Bảo vệ',Shift:'Ca đêm',Status:'Nghỉ phép'},
-  {EmployeeID:'E004',Name:'Phạm Thị Dung',Role:'Quản lý',Shift:'Hành chính',Status:'Đang làm'}
-];
+// 3. HÀM KHỞI CHẠY (Đây là cái bạn còn thiếu để hiển thị App)
+window.addEventListener('DOMContentLoaded', async () => {
+    console.log("Đang tải giao diện Karaoke...");
+    const app = document.getElementById('app');
+    
+    // Thử vẽ một cái gì đó ra màn hình để biết nó đã chạy
+    app.innerHTML = `
+        <div style="padding: 20px;">
+            <h1>${DEFAULT_SETTINGS.shopName}</h1>
+            <p>Đang tải danh sách phòng...</p>
+        </div>
+    `;
+    
+    // Ở đây bạn sẽ gọi hàm render chính của app bạn (ví dụ: renderDashboard())
+});
 
-const DEFAULT_CUSTOMERS = [
-  {CustomerID:'C001',Name:'Nguyễn Hữu Thành',Phone:'0901234567',MembershipLevel:'VIP'},
-  {CustomerID:'C002',Name:'Trần Văn Khoa',Phone:'0912345678',MembershipLevel:'Gold'},
-  {CustomerID:'C003',Name:'Lê Thị Mỹ Linh',Phone:'0923456789',MembershipLevel:'Silver'},
-  {CustomerID:'C004',Name:'Phạm Quốc Bảo',Phone:'0934567890',MembershipLevel:'Standard'}
-];
+// Thay thế const supabase = ... bằng cái này:
+if (!window.supabaseClient) {
+    window.supabaseClient = supabase.createClient(
+        'https://ihrtbsiusurvopbhtqde.supabase.co', 
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlocnRic2l1c3Vydm9wYmh0cWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzY5OTcsImV4cCI6MjA5NTgxMjk5N30.JNgO4mqMnqlkTO_vtE46oqK2agkGGNCYUWzL_hu8oIg'
+    );
+}
 
-const DEFAULT_SERVICES = [
-  {ServiceID:'SV001',Name:'Bia Tiger 330ml',Category:'Beer',UnitPrice:30000,Stock:200},
-  {ServiceID:'SV002',Name:'Bia Heineken 330ml',Category:'Beer',UnitPrice:35000,Stock:150},
-  {ServiceID:'SV003',Name:'Nước ngọt Pepsi',Category:'Soft drink',UnitPrice:20000,Stock:100},
-  {ServiceID:'SV004',Name:'Nước suối Lavie',Category:'Soft drink',UnitPrice:15000,Stock:80},
-  {ServiceID:'SV005',Name:'Đĩa mực chiên',Category:'Food',UnitPrice:80000,Stock:50},
-  {ServiceID:'SV006',Name:'Gà rán cay',Category:'Food',UnitPrice:120000,Stock:30},
-  {ServiceID:'SV007',Name:'Snack khoai tây',Category:'Food',UnitPrice:25000,Stock:60},
-  {ServiceID:'SV008',Name:'Khăn lạnh',Category:'Other',UnitPrice:10000,Stock:200},
-  {ServiceID:'SV009',Name:'Bật lửa',Category:'Other',UnitPrice:5000,Stock:100},
-  {ServiceID:'SV010',Name:'Jack âm thanh extra',Category:'Other',UnitPrice:50000,Stock:20}
-];
-
-let STATE = {
-  rooms:[],employees:[],customers:[],services:[],
-  serviceUsage:[],invoices:[],
-  settings:{...DEFAULT_SETTINGS},
-  nextUsageId:1,nextInvoiceId:1,nextEmpId:5,nextCustId:5,nextSvcId:11
-};
-
-let currentPage = 'dashboard';
-let pageState = {employees:{q:'',page:1,size:10},customers:{q:'',page:1,size:10},services:{q:'',page:1,size:10},invoices:{q:'',page:1,size:10}};
-let chartInstances = {};
-let clockInterval = null;
-let debounceTimers = {};
-
-// ============================================================
-// PERSISTENCE
-// ============================================================
-async function updateRoomInCloud(roomData) {
-    const { data, error } = await supabase
-        .from('rooms')
-        .update({ 
-            status: roomData.Status, 
-            check_in_time: roomData.CheckInTime 
+// BƯỚC QUAN TRỌNG: Gọi hàm khởi tạo khi trang tải xong
+window.addEventListener('DOMContentLoaded', () => {
+    console.log("Đang khởi động hệ thống...");
+    
+    // Gọi hàm load dữ liệu từ Supabase
+    loadStateFromSupabase()
+        .then(() => {
+            console.log("Dữ liệu đã sẵn sàng!");
+            // Gọi hàm render dashboard hoặc hàm chính của bạn ở đây
+            // ví dụ: renderDashboard(); 
         })
-        .eq('room_id', roomData.RoomID);
-        
-    if (error) console.error("Lỗi cập nhật phòng:", error);
-}
-async function loadStateFromSupabase() {
-    // Tải song song tất cả các bảng để app chạy nhanh
-    const [rooms, services, employees, customers] = await Promise.all([
-        supabase.from('rooms').select('*'),
-        supabase.from('services').select('*'),
-        supabase.from('employees').select('*'),
-        supabase.from('customers').select('*')
-    ]);
-
-    if (rooms.data) STATE.rooms = rooms.data;
-    if (services.data) STATE.services = services.data;
-    if (employees.data) STATE.employees = employees.data;
-    if (customers.data) STATE.customers = customers.data;
-
-    // Sau khi nạp xong dữ liệu thì mới hiển thị giao diện
-    renderPage(currentPage);
-    console.log("Đã tải dữ liệu từ Supabase!");
-}
-function initDefaultData(){
-  STATE.rooms = JSON.parse(JSON.stringify(DEFAULT_ROOMS));
-  STATE.employees = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEES));
-  STATE.customers = JSON.parse(JSON.stringify(DEFAULT_CUSTOMERS));
-  STATE.services = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
-  STATE.serviceUsage=[];STATE.invoices=[];
-  STATE.settings={...DEFAULT_SETTINGS};
-  STATE.nextUsageId=1;STATE.nextInvoiceId=1;STATE.nextEmpId=5;STATE.nextCustId=5;STATE.nextSvcId=11;
-}
-
+        .catch(err => {
+            console.error("Lỗi khi tải dữ liệu:", err);
+            document.getElementById('app').innerHTML = "<h1>Lỗi tải dữ liệu!</h1>";
+        });
+});
 // ============================================================
 // UTILITIES
 // ============================================================
@@ -158,7 +94,36 @@ function showNotif(msg,type='info'){
   setTimeout(()=>el.remove(),3200);
 }
 function debounce(key,fn,delay=300){clearTimeout(debounceTimers[key]);debounceTimers[key]=setTimeout(fn,delay);}
+// Hàm hiển thị trang web
+function renderPage(page) {
+    const app = document.getElementById('app');
+    if (!app) return;
 
+    // Ví dụ hiển thị danh sách phòng
+    let html = `<h1>KaraokeOS Dashboard</h1>`;
+    html += `<div class="room-grid">`;
+    
+    STATE.rooms.forEach(room => {
+        html += `
+            <div class="room-card ${statusClass(room.Status)}">
+                <h3>Phòng ${room.RoomID}</h3>
+                ${statusBadge(room.Status)}
+                <p>Giá: ${fmtMoney(room.HourlyPrice)}</p>
+            </div>
+        `;
+    });
+    
+    html += `</div>`;
+    app.innerHTML = html;
+}
+
+// CẬP NHẬT LẠI HÀM KHỞI TẠO ĐỂ GỌI HÀM NÀY
+window.addEventListener('DOMContentLoaded', async () => {
+    // 1. Tải data
+    await loadStateFromSupabase();
+    // 2. Vẽ giao diện
+    renderPage('dashboard');
+});
 // ============================================================
 // NAVIGATION
 // ============================================================

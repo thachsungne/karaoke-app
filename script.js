@@ -1270,3 +1270,22 @@ init();
 /* Ép buộc mọi thứ hiển thị */
 body { background-color: #222 !important; color: white !important; }
 #app { display: block !important; height: 100vh !important; border: 2px solid red; }
+// Gộp toàn bộ code của bạn vào đây để đảm bảo nó chạy sau khi DOM sẵn sàng
+window.addEventListener('DOMContentLoaded', () => {
+    console.log("Đang tải giao diện...");
+    
+    // TÌM TÊN HÀM KHỞI CHẠY CHÍNH CỦA BẠN TRONG 1259 DÒNG
+    // Nếu bạn không biết tên hàm, hãy thử các lệnh này:
+    
+    try {
+        // Thử chạy hàm render chính (đổi tên nếu cần)
+        if (typeof renderApp === 'function') { renderApp(); }
+        else if (typeof init === 'function') { init(); }
+        else if (typeof start === 'function') { start(); }
+        else {
+            console.error("Không tìm thấy hàm khởi chạy chính trong code của bạn!");
+        }
+    } catch (err) {
+        console.error("Lỗi khi chạy hàm khởi chạy:", err);
+    }
+});

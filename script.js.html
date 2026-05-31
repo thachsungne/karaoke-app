@@ -1,0 +1,1269 @@
+// ============================================================
+// STATE
+// ============================================================
+// Dán vào đầu file script.js của bạn
+const supabase = supabase.createClient('https://ihrtbsiusurvopbhtqde.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlocnRic2l1c3Vydm9wYmh0cWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzY5OTcsImV4cCI6MjA5NTgxMjk5N30.JNgO4mqMnqlkTO_vtE46oqK2agkGGNCYUWzL_hu8oIg');
+const DEFAULT_SETTINGS = {
+  shopName:'KaraokeOS Lounge',
+  address:'123 Nguyễn Huệ, Q.1, TP.HCM',
+  hotline:'0909 123 456',
+  taxId:'0123456789',
+  vipRate:500000,
+  stdRate:350000,
+  bankId:'VCB',
+  accountNo:'1234567890',
+  accountName:'KARAOKE OS',
+  printSize:'a4',
+  includeHeader:true,
+  footerNote:'Cảm ơn quý khách, hẹn gặp lại! 🎤',
+  theme:'dark'
+};
+
+const DEFAULT_ROOMS = [
+  {RoomID:'101',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'102',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
+  {RoomID:'103',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'104',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
+  {RoomID:'201',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
+  {RoomID:'202',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'203',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
+  {RoomID:'204',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'301',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'302',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null},
+  {RoomID:'303',RoomType:'Standard',HourlyPrice:350000,Status:'Available',CheckInTime:null},
+  {RoomID:'304',RoomType:'VIP',HourlyPrice:500000,Status:'Available',CheckInTime:null}
+];
+
+const DEFAULT_EMPLOYEES = [
+  {EmployeeID:'E001',Name:'Nguyễn Văn An',Role:'Thu ngân',Shift:'Ca sáng',Status:'Đang làm'},
+  {EmployeeID:'E002',Name:'Trần Thị Bình',Role:'Phục vụ',Shift:'Ca tối',Status:'Đang làm'},
+  {EmployeeID:'E003',Name:'Lê Minh Cường',Role:'Bảo vệ',Shift:'Ca đêm',Status:'Nghỉ phép'},
+  {EmployeeID:'E004',Name:'Phạm Thị Dung',Role:'Quản lý',Shift:'Hành chính',Status:'Đang làm'}
+];
+
+const DEFAULT_CUSTOMERS = [
+  {CustomerID:'C001',Name:'Nguyễn Hữu Thành',Phone:'0901234567',MembershipLevel:'VIP'},
+  {CustomerID:'C002',Name:'Trần Văn Khoa',Phone:'0912345678',MembershipLevel:'Gold'},
+  {CustomerID:'C003',Name:'Lê Thị Mỹ Linh',Phone:'0923456789',MembershipLevel:'Silver'},
+  {CustomerID:'C004',Name:'Phạm Quốc Bảo',Phone:'0934567890',MembershipLevel:'Standard'}
+];
+
+const DEFAULT_SERVICES = [
+  {ServiceID:'SV001',Name:'Bia Tiger 330ml',Category:'Beer',UnitPrice:30000,Stock:200},
+  {ServiceID:'SV002',Name:'Bia Heineken 330ml',Category:'Beer',UnitPrice:35000,Stock:150},
+  {ServiceID:'SV003',Name:'Nước ngọt Pepsi',Category:'Soft drink',UnitPrice:20000,Stock:100},
+  {ServiceID:'SV004',Name:'Nước suối Lavie',Category:'Soft drink',UnitPrice:15000,Stock:80},
+  {ServiceID:'SV005',Name:'Đĩa mực chiên',Category:'Food',UnitPrice:80000,Stock:50},
+  {ServiceID:'SV006',Name:'Gà rán cay',Category:'Food',UnitPrice:120000,Stock:30},
+  {ServiceID:'SV007',Name:'Snack khoai tây',Category:'Food',UnitPrice:25000,Stock:60},
+  {ServiceID:'SV008',Name:'Khăn lạnh',Category:'Other',UnitPrice:10000,Stock:200},
+  {ServiceID:'SV009',Name:'Bật lửa',Category:'Other',UnitPrice:5000,Stock:100},
+  {ServiceID:'SV010',Name:'Jack âm thanh extra',Category:'Other',UnitPrice:50000,Stock:20}
+];
+
+let STATE = {
+  rooms:[],employees:[],customers:[],services:[],
+  serviceUsage:[],invoices:[],
+  settings:{...DEFAULT_SETTINGS},
+  nextUsageId:1,nextInvoiceId:1,nextEmpId:5,nextCustId:5,nextSvcId:11
+};
+
+let currentPage = 'dashboard';
+let pageState = {employees:{q:'',page:1,size:10},customers:{q:'',page:1,size:10},services:{q:'',page:1,size:10},invoices:{q:'',page:1,size:10}};
+let chartInstances = {};
+let clockInterval = null;
+let debounceTimers = {};
+
+// ============================================================
+// PERSISTENCE
+// ============================================================
+async function updateRoomInCloud(roomData) {
+    const { data, error } = await supabase
+        .from('rooms')
+        .update({ 
+            status: roomData.Status, 
+            check_in_time: roomData.CheckInTime 
+        })
+        .eq('room_id', roomData.RoomID);
+        
+    if (error) console.error("Lỗi cập nhật phòng:", error);
+}
+async function loadStateFromSupabase() {
+    // Tải song song tất cả các bảng để app chạy nhanh
+    const [rooms, services, employees, customers] = await Promise.all([
+        supabase.from('rooms').select('*'),
+        supabase.from('services').select('*'),
+        supabase.from('employees').select('*'),
+        supabase.from('customers').select('*')
+    ]);
+
+    if (rooms.data) STATE.rooms = rooms.data;
+    if (services.data) STATE.services = services.data;
+    if (employees.data) STATE.employees = employees.data;
+    if (customers.data) STATE.customers = customers.data;
+
+    // Sau khi nạp xong dữ liệu thì mới hiển thị giao diện
+    renderPage(currentPage);
+    console.log("Đã tải dữ liệu từ Supabase!");
+}
+function initDefaultData(){
+  STATE.rooms = JSON.parse(JSON.stringify(DEFAULT_ROOMS));
+  STATE.employees = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEES));
+  STATE.customers = JSON.parse(JSON.stringify(DEFAULT_CUSTOMERS));
+  STATE.services = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
+  STATE.serviceUsage=[];STATE.invoices=[];
+  STATE.settings={...DEFAULT_SETTINGS};
+  STATE.nextUsageId=1;STATE.nextInvoiceId=1;STATE.nextEmpId=5;STATE.nextCustId=5;STATE.nextSvcId=11;
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function fmt(num){return new Intl.NumberFormat('vi-VN').format(Math.round(num));}
+function fmtMoney(n){return fmt(n)+' đ';}
+function fmtTime(dt){if(!dt)return '--';const d=new Date(dt);return d.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});}
+function fmtDate(dt){if(!dt)return '--';return new Date(dt).toLocaleDateString('vi-VN');}
+function fmtDateTime(dt){if(!dt)return '--';return new Date(dt).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+function calcHours(start,end){
+  const s=new Date(start),e=new Date(end||Date.now());
+  return Math.max(0,(e-s)/(1000*60*60));
+}
+function calcRoomCharge(room,checkOut){
+  if(!room.CheckInTime)return 0;
+  const h=calcHours(room.CheckInTime,checkOut);
+  return Math.ceil(h*100)/100 * room.HourlyPrice;
+}
+function getServiceCharge(roomId){
+  return STATE.serviceUsage
+    .filter(u=>u.RoomID===roomId&&!u.Settled)
+    .reduce((s,u)=>{const sv=STATE.services.find(x=>x.ServiceID===u.ServiceID);return s+(sv?sv.UnitPrice*u.Quantity:0);},0);
+}
+function genId(prefix,next){return prefix+String(next).padStart(3,'0');}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+function escHtml(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function statusLabel(s){const m={Available:'Trống',Active:'Có khách',Cleaning:'Dọn phòng',Pending:'Trả phòng'};return m[s]||s;}
+function statusClass(s){const m={Available:'available',Active:'active',Cleaning:'cleaning',Pending:'pending'};return m[s]||'pending';}
+function statusBadge(s){
+  const cls={Available:'badge-green',Active:'badge-red',Cleaning:'badge-yellow',Pending:'badge-gray'};
+  const dot={Available:'dot-green',Active:'dot-red',Cleaning:'dot-yellow',Pending:'dot-gray'};
+  return `<span class="room-status-badge ${cls[s]||'badge-gray'}"><span class="dot ${dot[s]||'dot-gray'}"></span>${statusLabel(s)}</span>`;
+}
+function showNotif(msg,type='info'){
+  const id='notif'+uid();
+  const el=document.createElement('div');
+  el.className=`notif ${type}`;el.id=id;
+  const icons={success:'fa-check-circle',error:'fa-circle-xmark',info:'fa-circle-info'};
+  el.innerHTML=`<i class="fa-solid ${icons[type]||icons.info}" style="color:var(--${type==='success'?'green':type==='error'?'red':'blue'})"></i> ${escHtml(msg)}`;
+  document.getElementById('notif-container').appendChild(el);
+  setTimeout(()=>el.remove(),3200);
+}
+function debounce(key,fn,delay=300){clearTimeout(debounceTimers[key]);debounceTimers[key]=setTimeout(fn,delay);}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+const PAGE_TITLES={dashboard:'Dashboard',rooms:'Sơ đồ phòng',employees:'Nhân viên',customers:'Khách hàng',services:'Dịch vụ',invoices:'Hóa đơn',settings:'Cài đặt'};
+function navigate(page){
+  currentPage=page;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  document.querySelector(`.nav-item[onclick*="${page}"]`)?.classList.add('active');
+  document.getElementById('topbar-title').textContent=PAGE_TITLES[page]||page;
+  renderPage(page);
+}
+function renderPage(page){
+  // Destroy previous charts
+  Object.values(chartInstances).forEach(c=>{try{c.destroy();}catch(e){}});
+  chartInstances={};
+  const pages={
+    dashboard:renderDashboard,rooms:renderRooms,
+    employees:renderEmployees,customers:renderCustomers,
+    services:renderServices,invoices:renderInvoices,settings:renderSettings
+  };
+  const fn=pages[page];
+  if(fn)fn();
+}
+
+// ============================================================
+// CLOCK
+// ============================================================
+function startClock(){
+  function update(){
+    const now=new Date();
+    const el=document.getElementById('clock-display');
+    if(el)el.textContent=now.toLocaleTimeString('vi-VN');
+    // Refresh active room timers on dashboard/rooms
+    if(currentPage==='dashboard'||currentPage==='rooms'){
+      document.querySelectorAll('[data-room-timer]').forEach(el=>{
+        const rid=el.dataset.roomTimer;
+        const room=STATE.rooms.find(r=>r.RoomID===rid);
+        if(room&&room.CheckInTime){
+          const h=calcHours(room.CheckInTime);
+          el.textContent=`${Math.floor(h)}h${Math.round((h%1)*60)}p | ${fmtMoney(calcRoomCharge(room))}`;
+        }
+      });
+    }
+  }
+  if(clockInterval)clearInterval(clockInterval);
+  clockInterval=setInterval(update,1000);
+  update();
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard(){
+  const activeRooms=STATE.rooms.filter(r=>r.Status==='Active');
+  const today=new Date().toDateString();
+  const todayInvoices=STATE.invoices.filter(i=>new Date(i.CheckOut).toDateString()===today);
+  const todayRevenue=todayInvoices.reduce((s,i)=>s+i.TotalAmount,0);
+  const utilRate=Math.round((activeRooms.length/STATE.rooms.length)*100);
+  // Top services
+  const svcCount={};
+  STATE.serviceUsage.forEach(u=>{svcCount[u.ServiceID]=(svcCount[u.ServiceID]||0)+u.Quantity;});
+  const topSvc=Object.entries(svcCount).sort((a,b)=>b[1]-a[1]).slice(0,1).map(([id,q])=>{
+    const s=STATE.services.find(x=>x.ServiceID===id);
+    return s?s.Name+' ('+q+')':'--';
+  });
+
+  document.getElementById('content').innerHTML=`
+<div class="kpi-grid">
+  <div class="kpi-card k-red">
+    <div class="kpi-label">Phòng đang hoạt động</div>
+    <div class="kpi-value">${activeRooms.length}<span style="font-size:16px;color:var(--text-muted)">/${STATE.rooms.length}</span></div>
+    <div class="kpi-sub">${utilRate}% công suất sử dụng</div>
+    <i class="fa-solid fa-door-open kpi-icon"></i>
+  </div>
+  <div class="kpi-card k-green">
+    <div class="kpi-label">Doanh thu hôm nay</div>
+    <div class="kpi-value" style="font-size:20px">${fmtMoney(todayRevenue)}</div>
+    <div class="kpi-sub">${todayInvoices.length} hóa đơn đã thanh toán</div>
+    <i class="fa-solid fa-money-bill-trend-up kpi-icon"></i>
+  </div>
+  <div class="kpi-card k-yellow">
+    <div class="kpi-label">Dịch vụ bán chạy</div>
+    <div class="kpi-value" style="font-size:16px">${topSvc[0]||'--'}</div>
+    <div class="kpi-sub">hôm nay</div>
+    <i class="fa-solid fa-star kpi-icon"></i>
+  </div>
+  <div class="kpi-card k-blue">
+    <div class="kpi-label">Tổng hóa đơn</div>
+    <div class="kpi-value">${STATE.invoices.length}</div>
+    <div class="kpi-sub">${STATE.invoices.filter(i=>i.PaymentStatus==='Paid').length} đã thanh toán</div>
+    <i class="fa-solid fa-receipt kpi-icon"></i>
+  </div>
+</div>
+<div class="charts-grid" style="margin-bottom:24px">
+  <div class="card">
+    <div class="card-title"><i class="fa-solid fa-chart-line" style="color:var(--accent)"></i> Doanh thu 7 ngày</div>
+    <div class="chart-container"><canvas id="chart-revenue"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><i class="fa-solid fa-chart-bar" style="color:var(--accent2)"></i> Top dịch vụ</div>
+    <div class="chart-container"><canvas id="chart-services"></canvas></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-title"><i class="fa-solid fa-table-cells" style="color:var(--accent3)"></i> Trạng thái phòng nhanh</div>
+  ${renderRoomGrid(true)}
+</div>`;
+  initDashboardCharts();
+}
+
+function initDashboardCharts(){
+  // Revenue chart - last 7 days
+  const labels=[];const data=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=d.toDateString();
+    labels.push(d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}));
+    data.push(STATE.invoices.filter(inv=>new Date(inv.CheckOut).toDateString()===ds).reduce((s,inv)=>s+inv.TotalAmount,0));
+  }
+  const isDark=document.documentElement.getAttribute('data-theme')==='dark';
+  const gridColor=isDark?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)';
+  const textColor=isDark?'#8890a8':'#5a6080';
+  Chart.defaults.color=textColor;
+  const ctx1=document.getElementById('chart-revenue')?.getContext('2d');
+  if(ctx1){
+    chartInstances.revenue=new Chart(ctx1,{
+      type:'line',data:{labels,datasets:[{label:'Doanh thu',data,borderColor:'#f0c040',backgroundColor:'rgba(240,192,64,.1)',borderWidth:2,tension:.4,fill:true,pointRadius:3,pointBackgroundColor:'#f0c040'}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gridColor},ticks:{callback:v=>fmt(v/1000)+'k'}},x:{grid:{color:gridColor}}}}
+    });
+  }
+  // Services chart
+  const svcCount={};
+  STATE.serviceUsage.forEach(u=>{svcCount[u.ServiceID]=(svcCount[u.ServiceID]||0)+u.Quantity;});
+  const sorted=Object.entries(svcCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const svcLabels=sorted.map(([id])=>STATE.services.find(s=>s.ServiceID===id)?.Name||id);
+  const svcData=sorted.map(([,q])=>q);
+  const ctx2=document.getElementById('chart-services')?.getContext('2d');
+  if(ctx2){
+    chartInstances.services=new Chart(ctx2,{
+      type:'bar',data:{labels:svcLabels,datasets:[{label:'Số lượng',data:svcData,backgroundColor:['#f0c040','#e05a8a','#4af0c0','#40a0f0','#a060f0'],borderRadius:6}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},indexAxis:'y',scales:{x:{grid:{color:gridColor}},y:{grid:{color:gridColor}}}}
+    });
+  }
+}
+
+// ============================================================
+// ROOMS
+// ============================================================
+function renderRooms(){
+  document.getElementById('content').innerHTML=`
+<div class="action-row">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${['Available','Active','Cleaning','Pending'].map(s=>`<span class="tag" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border)" onclick="filterRoomStatus('${s}')">${statusBadge(s)}</span>`).join('')}
+    <span class="tag" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border)" onclick="filterRoomStatus(null)"><span class="dot dot-gray"></span> Tất cả</span>
+  </div>
+</div>
+<div id="room-matrix">${renderRoomGrid(false)}</div>`;
+}
+let roomFilter=null;
+function filterRoomStatus(s){roomFilter=s;document.getElementById('room-matrix').innerHTML=renderRoomGrid(false);}
+function renderRoomGrid(compact){
+  const floors=['1','2','3'];
+  let html='';
+  floors.forEach(f=>{
+    const rooms=STATE.rooms.filter(r=>r.RoomID.startsWith(f)&&(!roomFilter||r.Status===roomFilter));
+    if(!rooms.length)return;
+    html+=`<div class="floor-section"><div class="floor-label"><i class="fa-solid fa-building"></i> Tầng ${f}</div><div class="room-grid">`;
+    rooms.forEach(r=>{
+      const sc=statusClass(r.Status);
+      html+=`<div class="room-card status-${sc}" onclick="handleRoomClick('${r.RoomID}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div class="room-id">${r.RoomID}</div>
+          <span class="tag ${r.RoomType==='VIP'?'tag-vip':'tag-std'}">${r.RoomType}</span>
+        </div>
+        ${statusBadge(r.Status)}
+        ${r.Status==='Active'?`<div class="room-time" data-room-timer="${r.RoomID}">...</div>`:''}
+        <div class="room-price">${fmtMoney(r.HourlyPrice)}/giờ</div>
+        ${!compact&&r.Status==='Active'?`<div style="margin-top:8px;display:flex;gap:4px">
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();checkOutRoom('${r.RoomID}')"><i class="fa-solid fa-receipt"></i></button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();setRoomStatus('${r.RoomID}','Cleaning')"><i class="fa-solid fa-broom"></i></button>
+        </div>`:''}
+      </div>`;
+    });
+    html+='</div></div>';
+  });
+  return html||'<div class="empty-state"><i class="fa-solid fa-door-open"></i><p>Không có phòng nào.</p></div>';
+}
+
+function handleRoomClick(roomId){
+  const room=STATE.rooms.find(r=>r.RoomID===roomId);
+  if(!room)return;
+  if(room.Status==='Available')openCheckInModal(room);
+  else if(room.Status==='Active')openServiceModal(room);
+  else if(room.Status==='Cleaning')openStatusModal(room);
+  else if(room.Status==='Pending')checkOutRoom(roomId);
+}
+
+function openCheckInModal(room){
+  const html=`
+<div class="modal-overlay" id="modal-checkin">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fa-solid fa-right-to-bracket" style="color:var(--green)"></i> Check-in Phòng ${room.RoomID}</div>
+      <button class="modal-close" onclick="closeModal('modal-checkin')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><div class="form-label">Phòng</div><div style="font-family:var(--font-head);font-size:24px;font-weight:800">${room.RoomID}</div></div>
+        <div class="form-group"><div class="form-label">Loại</div><span class="tag ${room.RoomType==='VIP'?'tag-vip':'tag-std'}">${room.RoomType}</span></div>
+      </div>
+      <div class="form-group"><div class="form-label">Giá phòng</div><div style="font-size:18px;font-weight:700;color:var(--accent)">${fmtMoney(room.HourlyPrice)}/giờ</div></div>
+      <div class="form-group"><div class="form-label">Giờ check-in</div><div style="font-size:15px;font-weight:600">${new Date().toLocaleString('vi-VN')}</div></div>
+      <div class="form-group">
+        <div class="form-label">Tên khách (tuỳ chọn)</div>
+        <input class="form-input" id="ci-guest" placeholder="Nhập tên hoặc SĐT..."/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-checkin')">Huỷ</button>
+      <button class="btn btn-primary" onclick="confirmCheckIn('${room.RoomID}')"><i class="fa-solid fa-check"></i> Xác nhận Check-in</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-checkin',html);
+}
+
+function confirmCheckIn(roomId){
+  const room=STATE.rooms.find(r=>r.RoomID===roomId);
+  if(!room)return;
+  room.Status='Active';
+  room.CheckInTime=new Date().toISOString();
+  saveState();
+  closeModal('modal-checkin');
+  showNotif(`Phòng ${roomId} đã check-in thành công!`,'success');
+  renderPage(currentPage);
+}
+
+function openServiceModal(room){
+  const usages=STATE.serviceUsage.filter(u=>u.RoomID===room.RoomID&&!u.Settled);
+  const roomCharge=calcRoomCharge(room);
+  const svcCharge=getServiceCharge(room.RoomID);
+
+  let svcRows=STATE.services.map(s=>{
+    const used=usages.filter(u=>u.ServiceID===s.ServiceID).reduce((sum,u)=>sum+u.Quantity,0);
+    return `<div class="service-item">
+      <div>
+        <div style="font-weight:600">${escHtml(s.Name)}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${escHtml(s.Category)} — ${fmtMoney(s.UnitPrice)}</div>
+      </div>
+      <div class="qty-control">
+        <button class="qty-btn" onclick="adjSvc('${room.RoomID}','${s.ServiceID}',-1)">−</button>
+        <span class="qty-num" id="qty-${s.ServiceID}">${used}</span>
+        <button class="qty-btn" onclick="adjSvc('${room.RoomID}','${s.ServiceID}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const html=`
+<div class="modal-overlay" id="modal-service">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fa-solid fa-utensils" style="color:var(--accent)"></i> Phục vụ — Phòng ${room.RoomID}</div>
+      <button class="modal-close" onclick="closeModal('modal-service')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div>
+          <div class="card-title">Thông tin phòng</div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--text-secondary)">Check-in</span><span style="font-weight:600">${fmtDateTime(room.CheckInTime)}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--text-secondary)">Tiền phòng (ước)</span><span style="font-weight:600;color:var(--accent)" id="rm-charge-live">${fmtMoney(roomCharge)}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--text-secondary)">Tiền dịch vụ</span><span style="font-weight:600;color:var(--accent2)" id="svc-charge-live">${fmtMoney(svcCharge)}</span></div>
+          <hr style="border-color:var(--border);margin:12px 0"/>
+          <div style="display:flex;justify-content:space-between"><span style="font-weight:700">Tạm tính</span><span style="font-weight:800;font-size:16px;color:var(--green)" id="total-live">${fmtMoney(roomCharge+svcCharge)}</span></div>
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-success" onclick="checkOutRoom('${room.RoomID}');closeModal('modal-service')"><i class="fa-solid fa-receipt"></i> Checkout</button>
+            <button class="btn btn-secondary" onclick="setRoomStatus('${room.RoomID}','Cleaning');closeModal('modal-service')"><i class="fa-solid fa-broom"></i> Dọn phòng</button>
+            <button class="btn btn-secondary" onclick="setRoomStatus('${room.RoomID}','Pending');closeModal('modal-service')"><i class="fa-solid fa-clock"></i> Trả phòng</button>
+          </div>
+        </div>
+        <div>
+          <div class="card-title">Gọi dịch vụ</div>
+          <div class="service-list">${svcRows}</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-service')">Đóng</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-service',html);
+}
+
+function adjSvc(roomId,svcId,delta){
+  const room=STATE.rooms.find(r=>r.RoomID===roomId);
+  if(!room)return;
+  const svc=STATE.services.find(s=>s.ServiceID===svcId);
+  if(!svc)return;
+
+  // Get current qty in usage for this room+service
+  const usages=STATE.serviceUsage.filter(u=>u.RoomID===roomId&&u.ServiceID===svcId&&!u.Settled);
+  const currentQty=usages.reduce((s,u)=>s+u.Quantity,0);
+  const newQty=currentQty+delta;
+
+  if(newQty<0)return;
+  if(delta>0&&svc.Stock<=0){showNotif('Hết hàng: '+svc.Name,'error');return;}
+
+  // Adjust stock
+  svc.Stock=Math.max(0,svc.Stock-delta);
+
+  // Find or create usage entry
+  if(usages.length>0){
+    // Adjust last usage
+    const last=usages[usages.length-1];
+    last.Quantity+=delta;
+    if(last.Quantity<=0){
+      // Remove
+      STATE.serviceUsage=STATE.serviceUsage.filter(u=>u!==last);
+    }
+  } else if(delta>0){
+    STATE.serviceUsage.push({
+      UsageID:'U'+String(STATE.nextUsageId++).padStart(4,'0'),
+      RoomID:roomId,ServiceID:svcId,Quantity:1,Timestamp:new Date().toISOString(),Settled:false
+    });
+  }
+
+  saveState();
+
+  // Update qty display
+  const qEl=document.getElementById('qty-'+svcId);
+  if(qEl)qEl.textContent=Math.max(0,newQty);
+
+  // Update totals
+  const svcCharge=getServiceCharge(roomId);
+  const roomCharge=calcRoomCharge(room);
+  const sc=document.getElementById('svc-charge-live');
+  const rm=document.getElementById('rm-charge-live');
+  const tot=document.getElementById('total-live');
+  if(sc)sc.textContent=fmtMoney(svcCharge);
+  if(rm)rm.textContent=fmtMoney(roomCharge);
+  if(tot)tot.textContent=fmtMoney(roomCharge+svcCharge);
+
+  if(currentPage==='dashboard')renderPage('dashboard');
+}
+
+function openStatusModal(room){
+  const html=`
+<div class="modal-overlay" id="modal-status">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Phòng ${room.RoomID} — ${statusLabel(room.Status)}</div>
+      <button class="modal-close" onclick="closeModal('modal-status')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+      <button class="btn btn-success btn-lg" onclick="setRoomStatus('${room.RoomID}','Available');closeModal('modal-status')"><i class="fa-solid fa-check"></i> Đánh dấu Trống</button>
+      <button class="btn btn-primary btn-lg" onclick="confirmCheckIn('${room.RoomID}')"><i class="fa-solid fa-right-to-bracket"></i> Check-in ngay</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-status',html);
+}
+
+function setRoomStatus(roomId,status){
+  const room=STATE.rooms.find(r=>r.RoomID===roomId);
+  if(!room)return;
+  room.Status=status;
+  if(status==='Available')room.CheckInTime=null;
+  saveState();
+  showNotif(`Phòng ${roomId} → ${statusLabel(status)}`,'info');
+  renderPage(currentPage);
+}
+
+// ============================================================
+// CHECKOUT & BILLING
+// ============================================================
+function checkOutRoom(roomId){
+  const room=STATE.rooms.find(r=>r.RoomID===roomId);
+  if(!room)return;
+  const checkOut=new Date().toISOString();
+  const roomCharge=calcRoomCharge(room,checkOut);
+  const svcCharge=getServiceCharge(roomId);
+  const total=roomCharge+svcCharge;
+
+  const invId='INV'+String(STATE.nextInvoiceId++).padStart(4,'0');
+  const invoice={
+    InvoiceID:invId,RoomID:roomId,
+    CheckIn:room.CheckInTime,CheckOut:checkOut,
+    RoomCharge:roomCharge,ServiceCharge:svcCharge,TotalAmount:total,
+    PaymentStatus:'Pending'
+  };
+  STATE.invoices.push(invoice);
+
+  // Mark usages settled
+  STATE.serviceUsage.filter(u=>u.RoomID===roomId&&!u.Settled).forEach(u=>u.Settled=true);
+
+  room.Status='Pending';
+  saveState();
+  closeModal('modal-service');
+  openBillModal(invoice,room);
+}
+
+function openBillModal(invoice,room){
+  if(!room)room=STATE.rooms.find(r=>r.RoomID===invoice.RoomID)||{RoomID:invoice.RoomID,RoomType:'--',HourlyPrice:0};
+  const s=STATE.settings;
+  const usages=STATE.serviceUsage.filter(u=>u.RoomID===invoice.RoomID&&u.Settled);
+  const hours=calcHours(invoice.CheckIn,invoice.CheckOut);
+
+  let svcRows='';
+  const svcSummary={};
+  usages.forEach(u=>{
+    svcSummary[u.ServiceID]=(svcSummary[u.ServiceID]||0)+u.Quantity;
+  });
+  Object.entries(svcSummary).forEach(([sid,qty])=>{
+    const sv=STATE.services.find(x=>x.ServiceID===sid);
+    if(sv)svcRows+=`<div class="bill-row"><span>${escHtml(sv.Name)} x${qty}</span><span>${fmtMoney(sv.UnitPrice*qty)}</span></div>`;
+  });
+
+  const qrUrl=`https://img.vietqr.io/image/${encodeURIComponent(s.bankId)}-${encodeURIComponent(s.accountNo)}-print.jpg?amount=${Math.round(invoice.TotalAmount)}&addInfo=${encodeURIComponent('Thanh Toan Phong '+invoice.RoomID)}&accountName=${encodeURIComponent(s.accountName)}`;
+
+  const html=`
+<div class="modal-overlay" id="modal-bill">
+  <div class="modal modal-lg">
+    <div class="modal-header no-print">
+      <div class="modal-title"><i class="fa-solid fa-receipt" style="color:var(--accent)"></i> Hóa đơn ${invoice.InvoiceID}</div>
+      <button class="modal-close" onclick="closeModal('modal-bill')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="bill-print-area">
+        <div class="bill-container">
+          ${s.includeHeader?`<div class="bill-title">${escHtml(s.shopName)}</div>
+          <div class="bill-sub">${escHtml(s.address)}<br>ĐT: ${escHtml(s.hotline)} | MST: ${escHtml(s.taxId)}</div>`:''}
+          <hr class="bill-divider"/>
+          <div style="text-align:center;font-weight:800;font-size:15px;margin-bottom:8px">HÓA ĐƠN THANH TOÁN</div>
+          <div class="bill-row"><span>Số HĐ:</span><span>${invoice.InvoiceID}</span></div>
+          <div class="bill-row"><span>Phòng:</span><span>${invoice.RoomID} (${room.RoomType})</span></div>
+          <div class="bill-row"><span>Check-in:</span><span>${fmtDateTime(invoice.CheckIn)}</span></div>
+          <div class="bill-row"><span>Check-out:</span><span>${fmtDateTime(invoice.CheckOut)}</span></div>
+          <div class="bill-row"><span>Thời gian:</span><span>${Math.floor(hours)}h ${Math.round((hours%1)*60)}p</span></div>
+          <hr class="bill-divider"/>
+          <div style="font-weight:700;margin-bottom:6px">Chi tiết:</div>
+          <div class="bill-row"><span>Tiền phòng (${fmt(Math.ceil(hours*100)/100)}h × ${fmtMoney(room.HourlyPrice)})</span><span>${fmtMoney(invoice.RoomCharge)}</span></div>
+          ${svcRows}
+          <hr class="bill-divider"/>
+          <div class="bill-row total"><span>TỔNG CỘNG</span><span>${fmtMoney(invoice.TotalAmount)}</span></div>
+          <div class="bill-qr">
+            <div style="font-size:11px;margin-bottom:8px;color:#666">Quét mã QR để thanh toán</div>
+            <img src="${qrUrl}" alt="VietQR" onerror="this.style.display='none'" loading="lazy"/>
+          </div>
+          <hr class="bill-divider"/>
+          <div style="text-align:center;font-size:11px;color:#666">${escHtml(s.footerNote)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer no-print">
+      <button class="btn btn-secondary" onclick="closeModal('modal-bill')">Đóng</button>
+      <button class="btn btn-success" onclick="markPaid('${invoice.InvoiceID}')"><i class="fa-solid fa-check"></i> Đã thanh toán</button>
+      <button class="btn btn-primary" onclick="printBill()"><i class="fa-solid fa-print"></i> In hóa đơn</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-bill',html);
+}
+
+function printBill(){
+  const content=document.getElementById('bill-print-area')?.innerHTML;
+  if(!content)return;
+  const w=window.open('','_blank','width=480,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hóa đơn</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>body{font-family:'DM Sans',sans-serif;margin:0;background:#fff;color:#000;}
+  .bill-container{padding:20px;max-width:380px;margin:0 auto;}
+  .bill-title{text-align:center;font-family:'Syne',sans-serif;font-size:18px;font-weight:800;}
+  .bill-sub{text-align:center;font-size:11px;color:#555;margin-bottom:12px;}
+  .bill-divider{border:none;border-top:1px dashed #999;margin:10px 0;}
+  .bill-row{display:flex;justify-content:space-between;margin:4px 0;font-size:12.5px;}
+  .bill-row.total{font-weight:800;font-size:15px;border-top:2px solid #000;padding-top:6px;margin-top:6px;}
+  .bill-qr{text-align:center;margin-top:14px;}
+  .bill-qr img{max-width:160px;border-radius:8px;}
+  </style></head><body>${content}<script>window.onload=()=>{window.print();window.close();}<\/script></body></html>`);
+  w.document.close();
+}
+
+function markPaid(invId){
+  const inv=STATE.invoices.find(i=>i.InvoiceID===invId);
+  if(inv){
+    inv.PaymentStatus='Paid';
+    // Also set room to cleaning
+    const room=STATE.rooms.find(r=>r.RoomID===inv.RoomID);
+    if(room){room.Status='Cleaning';room.CheckInTime=null;}
+    saveState();
+    showNotif('Hóa đơn '+invId+' đã thanh toán!','success');
+    closeModal('modal-bill');
+    renderPage(currentPage);
+  }
+}
+
+// ============================================================
+// EMPLOYEES CRUD
+// ============================================================
+function renderEmployees(){
+  const ps=pageState.employees;
+  const filtered=STATE.employees.filter(e=>!ps.q||[e.Name,e.Role,e.EmployeeID,e.Status].join(' ').toLowerCase().includes(ps.q.toLowerCase()));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/ps.size));
+  ps.page=Math.min(ps.page,pages);
+  const slice=filtered.slice((ps.page-1)*ps.size,ps.page*ps.size);
+
+  document.getElementById('content').innerHTML=`
+<div class="card">
+  <div class="action-row">
+    <div class="search-bar"><i class="fa-solid fa-search"></i><input class="form-input" id="emp-q" placeholder="Tìm nhân viên..." value="${escHtml(ps.q)}" oninput="debounce('emp-q',()=>{pageState.employees.q=this.value;pageState.employees.page=1;renderEmployees();})"/></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <select class="form-select" style="width:auto" onchange="pageState.employees.size=+this.value;pageState.employees.page=1;renderEmployees()">
+        ${[10,25,50].map(n=>`<option value="${n}" ${ps.size===n?'selected':''}>${n}/trang</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="openEmpModal()"><i class="fa-solid fa-plus"></i> Thêm</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mã</th><th>Tên</th><th>Vai trò</th><th>Ca</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+      <tbody>
+        ${slice.length?slice.map(e=>`<tr>
+          <td><code style="color:var(--accent);font-size:12px">${e.EmployeeID}</code></td>
+          <td><strong>${escHtml(e.Name)}</strong></td>
+          <td>${escHtml(e.Role)}</td>
+          <td>${escHtml(e.Shift)}</td>
+          <td><span class="tag ${e.Status==='Đang làm'?'tag-vip':'tag-std'}">${escHtml(e.Status)}</span></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="openEmpModal('${e.EmployeeID}')"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="delEmp('${e.EmployeeID}')"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa-solid fa-users"></i><p>Không tìm thấy nhân viên</p></div></td></tr>'}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+    <div style="font-size:12px;color:var(--text-muted)">Hiển thị ${slice.length}/${total} nhân viên</div>
+    ${renderPagination(ps.page,pages,'employees')}
+  </div>
+</div>`;
+  document.getElementById('emp-q').oninput=function(){debounce('emp-q',()=>{pageState.employees.q=this.value;pageState.employees.page=1;renderEmployees();});};
+}
+
+function openEmpModal(id){
+  const e=id?STATE.employees.find(x=>x.EmployeeID===id):{EmployeeID:'',Name:'',Role:'',Shift:'',Status:'Đang làm'};
+  const html=`
+<div class="modal-overlay" id="modal-emp">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">${id?'Sửa':'Thêm'} nhân viên</div>
+      <button class="modal-close" onclick="closeModal('modal-emp')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><div class="form-label">Mã NV</div><input class="form-input" id="ef-id" value="${escHtml(e.EmployeeID)}" ${id?'readonly':'placeholder="Tự động nếu để trống"'}/></div>
+      <div class="form-group"><div class="form-label">Họ tên</div><input class="form-input" id="ef-name" value="${escHtml(e.Name)}" placeholder="Nguyễn Văn A"/></div>
+      <div class="form-row">
+        <div class="form-group"><div class="form-label">Vai trò</div><input class="form-input" id="ef-role" value="${escHtml(e.Role)}" placeholder="Thu ngân, Phục vụ..."/></div>
+        <div class="form-group"><div class="form-label">Ca làm</div><input class="form-input" id="ef-shift" value="${escHtml(e.Shift)}" placeholder="Ca sáng, Ca tối..."/></div>
+      </div>
+      <div class="form-group"><div class="form-label">Trạng thái</div>
+        <select class="form-select" id="ef-status">
+          ${['Đang làm','Nghỉ phép','Đã nghỉ việc'].map(s=>`<option value="${s}" ${e.Status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-emp')">Huỷ</button>
+      <button class="btn btn-primary" onclick="saveEmp('${id||''}')"><i class="fa-solid fa-check"></i> Lưu</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-emp',html);
+}
+
+function saveEmp(id){
+  const eid=document.getElementById('ef-id').value.trim()||genId('E',STATE.nextEmpId++);
+  const name=document.getElementById('ef-name').value.trim();
+  if(!name){showNotif('Vui lòng nhập tên nhân viên','error');return;}
+  const obj={EmployeeID:eid,Name:name,Role:document.getElementById('ef-role').value.trim(),Shift:document.getElementById('ef-shift').value.trim(),Status:document.getElementById('ef-status').value};
+  if(id){const idx=STATE.employees.findIndex(e=>e.EmployeeID===id);if(idx>-1)STATE.employees[idx]=obj;}
+  else STATE.employees.push(obj);
+  saveState();closeModal('modal-emp');showNotif('Đã lưu nhân viên','success');renderEmployees();
+}
+
+function delEmp(id){
+  if(!confirm('Xoá nhân viên này?'))return;
+  STATE.employees=STATE.employees.filter(e=>e.EmployeeID!==id);
+  saveState();showNotif('Đã xoá','info');renderEmployees();
+}
+
+// ============================================================
+// CUSTOMERS CRUD
+// ============================================================
+function renderCustomers(){
+  const ps=pageState.customers;
+  const filtered=STATE.customers.filter(c=>!ps.q||[c.Name,c.Phone,c.CustomerID,c.MembershipLevel].join(' ').toLowerCase().includes(ps.q.toLowerCase()));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/ps.size));
+  ps.page=Math.min(ps.page,pages);
+  const slice=filtered.slice((ps.page-1)*ps.size,ps.page*ps.size);
+
+  document.getElementById('content').innerHTML=`
+<div class="card">
+  <div class="action-row">
+    <div class="search-bar"><i class="fa-solid fa-search"></i><input class="form-input" id="cust-q" placeholder="Tìm khách hàng..." value="${escHtml(ps.q)}"/></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <select class="form-select" style="width:auto" onchange="pageState.customers.size=+this.value;pageState.customers.page=1;renderCustomers()">
+        ${[10,25,50].map(n=>`<option value="${n}" ${ps.size===n?'selected':''}>${n}/trang</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="openCustModal()"><i class="fa-solid fa-plus"></i> Thêm</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mã KH</th><th>Tên</th><th>SĐT</th><th>Hạng</th><th>Thao tác</th></tr></thead>
+      <tbody>
+        ${slice.length?slice.map(c=>`<tr>
+          <td><code style="color:var(--accent);font-size:12px">${c.CustomerID}</code></td>
+          <td><strong>${escHtml(c.Name)}</strong></td>
+          <td>${escHtml(c.Phone)}</td>
+          <td><span class="tag ${c.MembershipLevel==='VIP'?'tag-vip':c.MembershipLevel==='Gold'?'tag-std':''}">${escHtml(c.MembershipLevel)}</span></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="openCustModal('${c.CustomerID}')"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="delCust('${c.CustomerID}')"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join(''):'<tr><td colspan="5"><div class="empty-state"><i class="fa-solid fa-user-group"></i><p>Không tìm thấy</p></div></td></tr>'}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+    <div style="font-size:12px;color:var(--text-muted)">Hiển thị ${slice.length}/${total} khách hàng</div>
+    ${renderPagination(ps.page,pages,'customers')}
+  </div>
+</div>`;
+  document.getElementById('cust-q').oninput=function(){debounce('cust-q',()=>{pageState.customers.q=this.value;pageState.customers.page=1;renderCustomers();});};
+}
+
+function openCustModal(id){
+  const c=id?STATE.customers.find(x=>x.CustomerID===id):{CustomerID:'',Name:'',Phone:'',MembershipLevel:'Standard'};
+  const html=`
+<div class="modal-overlay" id="modal-cust">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">${id?'Sửa':'Thêm'} khách hàng</div>
+      <button class="modal-close" onclick="closeModal('modal-cust')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><div class="form-label">Mã KH</div><input class="form-input" id="cf-id" value="${escHtml(c.CustomerID)}" ${id?'readonly':'placeholder="Tự động"'}/></div>
+      <div class="form-group"><div class="form-label">Họ tên</div><input class="form-input" id="cf-name" value="${escHtml(c.Name)}" placeholder="Nguyễn Văn A"/></div>
+      <div class="form-row">
+        <div class="form-group"><div class="form-label">SĐT</div><input class="form-input" id="cf-phone" value="${escHtml(c.Phone)}" placeholder="0901234567"/></div>
+        <div class="form-group"><div class="form-label">Hạng thành viên</div>
+          <select class="form-select" id="cf-level">
+            ${['Standard','Silver','Gold','VIP'].map(l=>`<option value="${l}" ${c.MembershipLevel===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-cust')">Huỷ</button>
+      <button class="btn btn-primary" onclick="saveCust('${id||''}')"><i class="fa-solid fa-check"></i> Lưu</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-cust',html);
+}
+
+function saveCust(id){
+  const cid=document.getElementById('cf-id').value.trim()||genId('C',STATE.nextCustId++);
+  const name=document.getElementById('cf-name').value.trim();
+  if(!name){showNotif('Vui lòng nhập tên','error');return;}
+  const obj={CustomerID:cid,Name:name,Phone:document.getElementById('cf-phone').value.trim(),MembershipLevel:document.getElementById('cf-level').value};
+  if(id){const idx=STATE.customers.findIndex(c=>c.CustomerID===id);if(idx>-1)STATE.customers[idx]=obj;}
+  else STATE.customers.push(obj);
+  saveState();closeModal('modal-cust');showNotif('Đã lưu khách hàng','success');renderCustomers();
+}
+
+function delCust(id){
+  if(!confirm('Xoá khách hàng này?'))return;
+  STATE.customers=STATE.customers.filter(c=>c.CustomerID!==id);
+  saveState();showNotif('Đã xoá','info');renderCustomers();
+}
+
+// ============================================================
+// SERVICES CRUD
+// ============================================================
+function renderServices(){
+  const ps=pageState.services;
+  const filtered=STATE.services.filter(s=>!ps.q||[s.Name,s.Category,s.ServiceID].join(' ').toLowerCase().includes(ps.q.toLowerCase()));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/ps.size));
+  ps.page=Math.min(ps.page,pages);
+  const slice=filtered.slice((ps.page-1)*ps.size,ps.page*ps.size);
+
+  document.getElementById('content').innerHTML=`
+<div class="card">
+  <div class="action-row">
+    <div class="search-bar"><i class="fa-solid fa-search"></i><input class="form-input" id="svc-q" placeholder="Tìm dịch vụ..." value="${escHtml(ps.q)}"/></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <select class="form-select" style="width:auto" onchange="pageState.services.size=+this.value;pageState.services.page=1;renderServices()">
+        ${[10,25,50].map(n=>`<option value="${n}" ${ps.size===n?'selected':''}>${n}/trang</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="openSvcModal()"><i class="fa-solid fa-plus"></i> Thêm</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mã</th><th>Tên dịch vụ</th><th>Danh mục</th><th>Đơn giá</th><th>Tồn kho</th><th>Thao tác</th></tr></thead>
+      <tbody>
+        ${slice.length?slice.map(s=>`<tr>
+          <td><code style="color:var(--accent);font-size:12px">${s.ServiceID}</code></td>
+          <td><strong>${escHtml(s.Name)}</strong></td>
+          <td><span class="tag" style="background:var(--bg-secondary)">${escHtml(s.Category)}</span></td>
+          <td style="color:var(--accent);font-weight:600">${fmtMoney(s.UnitPrice)}</td>
+          <td><span style="color:${s.Stock<10?'var(--red)':s.Stock<30?'var(--yellow)':'var(--green)'};font-weight:600">${s.Stock}</span></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="openSvcModal('${s.ServiceID}')"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="delSvc('${s.ServiceID}')"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa-solid fa-boxes-stacked"></i><p>Không tìm thấy</p></div></td></tr>'}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+    <div style="font-size:12px;color:var(--text-muted)">Hiển thị ${slice.length}/${total} dịch vụ</div>
+    ${renderPagination(ps.page,pages,'services')}
+  </div>
+</div>`;
+  document.getElementById('svc-q').oninput=function(){debounce('svc-q',()=>{pageState.services.q=this.value;pageState.services.page=1;renderServices();});};
+}
+
+function openSvcModal(id){
+  const s=id?STATE.services.find(x=>x.ServiceID===id):{ServiceID:'',Name:'',Category:'Food',UnitPrice:0,Stock:0};
+  const html=`
+<div class="modal-overlay" id="modal-svc">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">${id?'Sửa':'Thêm'} dịch vụ</div>
+      <button class="modal-close" onclick="closeModal('modal-svc')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><div class="form-label">Mã dịch vụ</div><input class="form-input" id="sf-id" value="${escHtml(s.ServiceID)}" ${id?'readonly':'placeholder="Tự động"'}/></div>
+      <div class="form-group"><div class="form-label">Tên dịch vụ</div><input class="form-input" id="sf-name" value="${escHtml(s.Name)}" placeholder="Bia Tiger 330ml..."/></div>
+      <div class="form-row">
+        <div class="form-group"><div class="form-label">Danh mục</div>
+          <select class="form-select" id="sf-cat">
+            ${['Beer','Food','Soft drink','Other'].map(c=>`<option value="${c}" ${s.Category===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><div class="form-label">Đơn giá (VND)</div><input class="form-input" type="number" id="sf-price" value="${s.UnitPrice}"/></div>
+      </div>
+      <div class="form-group"><div class="form-label">Tồn kho</div><input class="form-input" type="number" id="sf-stock" value="${s.Stock}"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-svc')">Huỷ</button>
+      <button class="btn btn-primary" onclick="saveSvc('${id||''}')"><i class="fa-solid fa-check"></i> Lưu</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-svc',html);
+}
+
+function saveSvc(id){
+  const sid=document.getElementById('sf-id').value.trim()||genId('SV',STATE.nextSvcId++);
+  const name=document.getElementById('sf-name').value.trim();
+  if(!name){showNotif('Vui lòng nhập tên','error');return;}
+  const obj={ServiceID:sid,Name:name,Category:document.getElementById('sf-cat').value,UnitPrice:parseFloat(document.getElementById('sf-price').value)||0,Stock:parseInt(document.getElementById('sf-stock').value)||0};
+  if(id){const idx=STATE.services.findIndex(s=>s.ServiceID===id);if(idx>-1)STATE.services[idx]=obj;}
+  else STATE.services.push(obj);
+  saveState();closeModal('modal-svc');showNotif('Đã lưu dịch vụ','success');renderServices();
+}
+
+function delSvc(id){
+  if(!confirm('Xoá dịch vụ này?'))return;
+  STATE.services=STATE.services.filter(s=>s.ServiceID!==id);
+  saveState();showNotif('Đã xoá','info');renderServices();
+}
+
+// ============================================================
+// INVOICES
+// ============================================================
+function renderInvoices(){
+  const ps=pageState.invoices;
+  const filtered=STATE.invoices.filter(i=>!ps.q||[i.InvoiceID,i.RoomID,i.PaymentStatus].join(' ').toLowerCase().includes(ps.q.toLowerCase()));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/ps.size));
+  ps.page=Math.min(ps.page,pages);
+  const slice=[...filtered].reverse().slice((ps.page-1)*ps.size,ps.page*ps.size);
+
+  const totalRev=STATE.invoices.filter(i=>i.PaymentStatus==='Paid').reduce((s,i)=>s+i.TotalAmount,0);
+
+  document.getElementById('content').innerHTML=`
+<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi-card k-green">
+    <div class="kpi-label">Tổng doanh thu</div>
+    <div class="kpi-value" style="font-size:20px">${fmtMoney(totalRev)}</div>
+    <i class="fa-solid fa-sack-dollar kpi-icon"></i>
+  </div>
+  <div class="kpi-card k-yellow">
+    <div class="kpi-label">Hóa đơn đã thanh toán</div>
+    <div class="kpi-value">${STATE.invoices.filter(i=>i.PaymentStatus==='Paid').length}</div>
+    <i class="fa-solid fa-check-circle kpi-icon"></i>
+  </div>
+  <div class="kpi-card k-red">
+    <div class="kpi-label">Hóa đơn chờ</div>
+    <div class="kpi-value">${STATE.invoices.filter(i=>i.PaymentStatus!=='Paid').length}</div>
+    <i class="fa-solid fa-clock kpi-icon"></i>
+  </div>
+</div>
+<div class="card">
+  <div class="action-row">
+    <div class="search-bar"><i class="fa-solid fa-search"></i><input class="form-input" id="inv-q" placeholder="Tìm hóa đơn..." value="${escHtml(ps.q)}"/></div>
+    <select class="form-select" style="width:auto" onchange="pageState.invoices.size=+this.value;pageState.invoices.page=1;renderInvoices()">
+      ${[10,25,50].map(n=>`<option value="${n}" ${ps.size===n?'selected':''}>${n}/trang</option>`).join('')}
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Số HĐ</th><th>Phòng</th><th>Check-in</th><th>Check-out</th><th>Tiền phòng</th><th>Dịch vụ</th><th>Tổng</th><th>TT</th><th></th></tr></thead>
+      <tbody>
+        ${slice.length?slice.map(i=>`<tr>
+          <td><code style="color:var(--accent)">${i.InvoiceID}</code></td>
+          <td><strong>${i.RoomID}</strong></td>
+          <td style="font-size:12px">${fmtDateTime(i.CheckIn)}</td>
+          <td style="font-size:12px">${fmtDateTime(i.CheckOut)}</td>
+          <td>${fmtMoney(i.RoomCharge)}</td>
+          <td>${fmtMoney(i.ServiceCharge)}</td>
+          <td style="font-weight:700;color:var(--green)">${fmtMoney(i.TotalAmount)}</td>
+          <td><span class="tag ${i.PaymentStatus==='Paid'?'tag-vip':'tag-std'}">${i.PaymentStatus==='Paid'?'Đã TT':'Chờ TT'}</span></td>
+          <td style="display:flex;gap:4px">
+            <button class="btn btn-secondary btn-sm" onclick="viewInvoice('${i.InvoiceID}')"><i class="fa-solid fa-eye"></i></button>
+            ${i.PaymentStatus!=='Paid'?`<button class="btn btn-success btn-sm" onclick="markPaid('${i.InvoiceID}')"><i class="fa-solid fa-check"></i></button>`:''}
+          </td>
+        </tr>`).join(''):'<tr><td colspan="9"><div class="empty-state"><i class="fa-solid fa-file-invoice"></i><p>Chưa có hóa đơn</p></div></td></tr>'}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+    <div style="font-size:12px;color:var(--text-muted)">Hiển thị ${slice.length}/${total}</div>
+    ${renderPagination(ps.page,pages,'invoices')}
+  </div>
+</div>`;
+  document.getElementById('inv-q').oninput=function(){debounce('inv-q',()=>{pageState.invoices.q=this.value;pageState.invoices.page=1;renderInvoices();});};
+}
+
+function viewInvoice(invId){
+  const inv=STATE.invoices.find(i=>i.InvoiceID===invId);
+  if(inv)openBillModal(inv,null);
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function renderSettings(){
+  const s=STATE.settings;
+  document.getElementById('content').innerHTML=`
+<div class="settings-grid">
+  <div class="settings-section">
+    <div class="settings-title"><i class="fa-solid fa-building"></i> Cấu hình cửa hàng</div>
+    <div class="form-group"><div class="form-label">Tên cửa hàng</div><input class="form-input" id="ss-name" value="${escHtml(s.shopName)}"/></div>
+    <div class="form-group"><div class="form-label">Địa chỉ</div><input class="form-input" id="ss-addr" value="${escHtml(s.address)}"/></div>
+    <div class="form-row">
+      <div class="form-group"><div class="form-label">Hotline</div><input class="form-input" id="ss-phone" value="${escHtml(s.hotline)}"/></div>
+      <div class="form-group"><div class="form-label">Mã số thuế</div><input class="form-input" id="ss-tax" value="${escHtml(s.taxId)}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><div class="form-label">Giá VIP (VND/giờ)</div><input class="form-input" type="number" id="ss-vip" value="${s.vipRate}"/></div>
+      <div class="form-group"><div class="form-label">Giá Standard (VND/giờ)</div><input class="form-input" type="number" id="ss-std" value="${s.stdRate}"/></div>
+    </div>
+    <button class="btn btn-primary" onclick="saveShopSettings()"><i class="fa-solid fa-save"></i> Lưu cấu hình</button>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title"><i class="fa-solid fa-qrcode"></i> Cấu hình thanh toán VietQR</div>
+    <div class="form-group"><div class="form-label">Ngân hàng (Bank ID)</div>
+      <select class="form-select" id="ss-bank">
+        ${['VCB','TCB','MB','VTB','ACB','BIDV','STB','TPB','VPB','OCB','HDB','MSB'].map(b=>`<option value="${b}" ${s.bankId===b?'selected':''}>${b}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><div class="form-label">Số tài khoản</div><input class="form-input" id="ss-accno" value="${escHtml(s.accountNo)}"/></div>
+    <div class="form-group"><div class="form-label">Tên chủ tài khoản</div><input class="form-input" id="ss-accname" value="${escHtml(s.accountName)}"/></div>
+    <div class="form-group">
+      <div class="form-label">Xem trước QR (100,000 VND)</div>
+      <img src="https://img.vietqr.io/image/${encodeURIComponent(s.bankId)}-${encodeURIComponent(s.accountNo)}-compact.jpg?amount=100000&addInfo=Preview&accountName=${encodeURIComponent(s.accountName)}" style="max-width:180px;border-radius:8px;margin-top:4px" id="qr-preview" onerror="this.style.opacity='.3'"/>
+    </div>
+    <button class="btn btn-primary" onclick="savePaymentSettings()"><i class="fa-solid fa-save"></i> Lưu & Cập nhật QR</button>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title"><i class="fa-solid fa-print"></i> Cấu hình in ấn</div>
+    <div class="form-group"><div class="form-label">Khổ in</div>
+      <select class="form-select" id="ss-print">
+        <option value="a4" ${s.printSize==='a4'?'selected':''}>A4</option>
+        <option value="pos" ${s.printSize==='pos'?'selected':''}>POS 80mm</option>
+      </select>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:12px">
+      <label class="toggle"><input type="checkbox" id="ss-header" ${s.includeHeader?'checked':''}><span class="toggle-slider"></span></label>
+      <div class="form-label" style="margin:0">Hiển thị tiêu đề cửa hàng trên hóa đơn</div>
+    </div>
+    <div class="form-group"><div class="form-label">Ghi chú cuối hóa đơn</div><input class="form-input" id="ss-footer" value="${escHtml(s.footerNote)}"/></div>
+    <button class="btn btn-primary" onclick="savePrintSettings()"><i class="fa-solid fa-save"></i> Lưu cài đặt in</button>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title"><i class="fa-solid fa-palette"></i> Giao diện & Dữ liệu</div>
+    <div class="form-group" style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-weight:600">Chế độ tối (Dark Mode)</div>
+        <div style="font-size:12px;color:var(--text-muted)">Chuyển đổi sáng/tối</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="theme-toggle" ${document.documentElement.getAttribute('data-theme')==='dark'?'checked':''} onchange="toggleTheme()"><span class="toggle-slider"></span></label>
+    </div>
+    <hr style="border-color:var(--border);margin:16px 0"/>
+    <div style="font-weight:600;margin-bottom:8px">Dữ liệu hệ thống</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-secondary" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Xuất toàn bộ dữ liệu (.xlsx)</button>
+      <button class="btn btn-secondary" onclick="openImportModal()"><i class="fa-solid fa-file-import"></i> Nhập dữ liệu từ Excel</button>
+      <button class="btn btn-danger" onclick="resetData()"><i class="fa-solid fa-rotate-left"></i> Khôi phục dữ liệu mặc định</button>
+    </div>
+    <hr style="border-color:var(--border);margin:16px 0"/>
+    <div style="font-size:12px;color:var(--text-muted)">
+      <div>Phòng: <strong>${STATE.rooms.length}</strong> | Nhân viên: <strong>${STATE.employees.length}</strong></div>
+      <div>Khách hàng: <strong>${STATE.customers.length}</strong> | Dịch vụ: <strong>${STATE.services.length}</strong></div>
+      <div>Hóa đơn: <strong>${STATE.invoices.length}</strong> | Phục vụ: <strong>${STATE.serviceUsage.length}</strong></div>
+    </div>
+  </div>
+</div>`;
+}
+
+function saveShopSettings(){
+  STATE.settings.shopName=document.getElementById('ss-name').value;
+  STATE.settings.address=document.getElementById('ss-addr').value;
+  STATE.settings.hotline=document.getElementById('ss-phone').value;
+  STATE.settings.taxId=document.getElementById('ss-tax').value;
+  STATE.settings.vipRate=parseFloat(document.getElementById('ss-vip').value)||500000;
+  STATE.settings.stdRate=parseFloat(document.getElementById('ss-std').value)||350000;
+  // Update room prices
+  STATE.rooms.forEach(r=>{r.HourlyPrice=r.RoomType==='VIP'?STATE.settings.vipRate:STATE.settings.stdRate;});
+  saveState();showNotif('Đã lưu cấu hình cửa hàng','success');
+}
+
+function savePaymentSettings(){
+  STATE.settings.bankId=document.getElementById('ss-bank').value;
+  STATE.settings.accountNo=document.getElementById('ss-accno').value;
+  STATE.settings.accountName=document.getElementById('ss-accname').value;
+  saveState();showNotif('Đã lưu cấu hình thanh toán','success');
+  // Update QR preview
+  const s=STATE.settings;
+  const qr=document.getElementById('qr-preview');
+  if(qr)qr.src=`https://img.vietqr.io/image/${encodeURIComponent(s.bankId)}-${encodeURIComponent(s.accountNo)}-compact.jpg?amount=100000&addInfo=Preview&accountName=${encodeURIComponent(s.accountName)}`;
+}
+
+function savePrintSettings(){
+  STATE.settings.printSize=document.getElementById('ss-print').value;
+  STATE.settings.includeHeader=document.getElementById('ss-header').checked;
+  STATE.settings.footerNote=document.getElementById('ss-footer').value;
+  saveState();showNotif('Đã lưu cấu hình in ấn','success');
+}
+
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute('data-theme');
+  const next=cur==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  STATE.settings.theme=next;
+  saveState();
+  // Re-render charts if on dashboard
+  if(currentPage==='dashboard')initDashboardCharts();
+}
+
+function resetData(){
+  if(!confirm('Khôi phục dữ liệu mặc định? Tất cả thay đổi sẽ bị mất!'))return;
+  initDefaultData();saveState();showNotif('Đã khôi phục dữ liệu mặc định','info');renderSettings();
+}
+
+// ============================================================
+// PAGINATION
+// ============================================================
+function renderPagination(current,total,key){
+  if(total<=1)return '';
+  let html='<div class="pagination">';
+  html+=`<button class="page-btn" onclick="changePage('${key}',${current-1})" ${current<=1?'disabled':''}>‹</button>`;
+  for(let p=1;p<=total;p++){
+    if(total>7&&p>2&&p<total-1&&Math.abs(p-current)>1){if(p===3||p===total-2)html+='<span style="padding:0 4px;color:var(--text-muted)">…</span>';continue;}
+    html+=`<button class="page-btn ${p===current?'active':''}" onclick="changePage('${key}',${p})">${p}</button>`;
+  }
+  html+=`<button class="page-btn" onclick="changePage('${key}',${current+1})" ${current>=total?'disabled':''}>›</button>`;
+  return html+'</div>';
+}
+function changePage(key,p){
+  const ps=pageState[key];if(!ps)return;
+  ps.page=Math.max(1,p);
+  const fns={employees:renderEmployees,customers:renderCustomers,services:renderServices,invoices:renderInvoices};
+  fns[key]?.();
+}
+
+// ============================================================
+// MODAL HELPERS
+// ============================================================
+function showModal(id,html){
+  const container=document.getElementById('modal-container');
+  const existing=document.getElementById(id);
+  if(existing)existing.remove();
+  container.insertAdjacentHTML('beforeend',html);
+  document.getElementById(id)?.addEventListener('click',function(e){if(e.target===this)closeModal(id);});
+}
+function closeModal(id){document.getElementById(id)?.remove();}
+
+// ============================================================
+// EXCEL IMPORT
+// ============================================================
+function openImportModal(){
+  const html=`
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fa-solid fa-file-import" style="color:var(--blue)"></i> Nhập dữ liệu từ Excel</div>
+      <button class="modal-close" onclick="closeModal('modal-import')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Chọn file Excel (.xlsx) có các sheet: ROOMS, EMPLOYEES, CUSTOMERS, SERVICES, SERVICE_USAGE, INVOICES.</p>
+      <div class="form-group">
+        <input type="file" id="excel-file" accept=".xlsx,.xls" class="form-input" style="padding:8px"/>
+      </div>
+      <div id="import-log" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-import')">Huỷ</button>
+      <button class="btn btn-primary" onclick="processImport()"><i class="fa-solid fa-upload"></i> Nhập dữ liệu</button>
+    </div>
+  </div>
+</div>`;
+  showModal('modal-import',html);
+}
+
+function processImport(){
+  const file=document.getElementById('excel-file')?.files[0];
+  if(!file){showNotif('Vui lòng chọn file Excel','error');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',codepage:65001});
+      const log=[];
+      function parseSheet(name,mapper){
+        const ws=wb.Sheets[name]||wb.Sheets[Object.keys(wb.Sheets).find(k=>k.toLowerCase()===name.toLowerCase())];
+        if(!ws)return null;
+        const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+        log.push(`${name}: ${rows.length} dòng`);
+        return rows.map(mapper).filter(Boolean);
+      }
+
+      const rooms=parseSheet('ROOMS',r=>r.RoomID?{RoomID:String(r.RoomID),RoomType:r.RoomType||'Standard',HourlyPrice:parseFloat(r.HourlyPrice)||350000,Status:r.Status||'Available',CheckInTime:r.CheckInTime?new Date(r.CheckInTime).toISOString():null}:null);
+      const employees=parseSheet('EMPLOYEES',r=>r.EmployeeID?{EmployeeID:String(r.EmployeeID),Name:String(r.Name||''),Role:String(r.Role||''),Shift:String(r.Shift||''),Status:String(r.Status||'')}:null);
+      const customers=parseSheet('CUSTOMERS',r=>r.CustomerID?{CustomerID:String(r.CustomerID),Name:String(r.Name||''),Phone:String(r.Phone||''),MembershipLevel:String(r.MembershipLevel||'Standard')}:null);
+      const services=parseSheet('SERVICES',r=>r.ServiceID?{ServiceID:String(r.ServiceID),Name:String(r.Name||''),Category:String(r.Category||'Other'),UnitPrice:parseFloat(r.UnitPrice)||0,Stock:parseInt(r.Stock)||0}:null);
+      const usages=parseSheet('SERVICE_USAGE',r=>r.UsageID?{UsageID:String(r.UsageID),RoomID:String(r.RoomID||''),ServiceID:String(r.ServiceID||''),Quantity:parseInt(r.Quantity)||1,Timestamp:r.Timestamp?new Date(r.Timestamp).toISOString():new Date().toISOString(),Settled:r.Settled==='true'||r.Settled===true}:null);
+      const invoices=parseSheet('INVOICES',r=>r.InvoiceID?{InvoiceID:String(r.InvoiceID),RoomID:String(r.RoomID||''),CheckIn:r.CheckIn?new Date(r.CheckIn).toISOString():null,CheckOut:r.CheckOut?new Date(r.CheckOut).toISOString():null,RoomCharge:parseFloat(r.RoomCharge)||0,ServiceCharge:parseFloat(r.ServiceCharge)||0,TotalAmount:parseFloat(r.TotalAmount)||0,PaymentStatus:String(r.PaymentStatus||'Pending')}:null);
+
+      if(rooms)STATE.rooms=rooms;
+      if(employees)STATE.employees=employees;
+      if(customers)STATE.customers=customers;
+      if(services)STATE.services=services;
+      if(usages)STATE.serviceUsage=usages;
+      if(invoices)STATE.invoices=invoices;
+
+      document.getElementById('import-log').innerHTML='<strong style="color:var(--green)">Nhập thành công:</strong><br>'+log.join('<br>');
+      saveState();
+      showNotif('Nhập dữ liệu Excel thành công!','success');
+      setTimeout(()=>{closeModal('modal-import');renderPage(currentPage);},1500);
+    }catch(err){
+      document.getElementById('import-log').innerHTML='<span style="color:var(--red)">Lỗi: '+escHtml(err.message)+'</span>';
+      showNotif('Lỗi nhập file Excel: '+err.message,'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ============================================================
+// EXCEL EXPORT
+// ============================================================
+function exportExcel(){
+  try{
+    const wb=XLSX.utils.book_new();
+    function addSheet(name,data){
+      if(!data.length)return;
+      const ws=XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb,ws,name);
+    }
+    addSheet('ROOMS',STATE.rooms);
+    addSheet('EMPLOYEES',STATE.employees);
+    addSheet('CUSTOMERS',STATE.customers);
+    addSheet('SERVICES',STATE.services);
+    addSheet('SERVICE_USAGE',STATE.serviceUsage);
+    addSheet('INVOICES',STATE.invoices);
+    const now=new Date();
+    const fname=`KaraokeOS_Backup_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb,fname,{bookType:'xlsx',type:'binary'});
+    showNotif('Đã xuất file Excel: '+fname,'success');
+  }catch(err){showNotif('Lỗi xuất Excel: '+err.message,'error');}
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init(){
+  const loaded=loadState();
+  if(!loaded)initDefaultData();
+  // Apply theme
+  document.documentElement.setAttribute('data-theme',STATE.settings.theme||'dark');
+  startClock();
+  navigate('dashboard');
+}
+init();

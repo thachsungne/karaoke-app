@@ -1,10 +1,24 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
-    <div id="app">Đang khởi tạo hệ thống...</div>
-    <script src="script.js"></script>
-</body>
-</html>
+// Khởi tạo Supabase vào biến toàn cục window
+window.supabaseClient = supabase.createClient(
+    'https://ihrtbsiusurvopbhtqde.supabase.co', 
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlocnRic2l1c3Vydm9wYmh0cWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzY5OTcsImV4cCI6MjA5NTgxMjk5N30.JNgO4mqMnqlkTO_vtE46oqK2agkGGNCYUWzL_hu8oIg'
+);
+
+// Hàm hiển thị nội dung
+async function renderApp() {
+    const app = document.getElementById('app');
+    app.innerHTML = "Đang kết nối database...";
+    
+    try {
+        const { data, error } = await window.supabaseClient.from('rooms').select('*');
+        if (error) throw error;
+        
+        app.innerHTML = `<h1>Kết nối thành công! Số phòng: ${data.length}</h1>`;
+    } catch (e) {
+        app.innerHTML = `<h1 style="color:red;">Lỗi database: ${e.message}</h1>`;
+        console.error(e);
+    }
+}
+
+// Chạy khi trang đã load xong
+window.onload = renderApp;
